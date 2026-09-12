@@ -9,15 +9,43 @@ struct DetectionTests {
             precondition(condition(), message)
             checks += 1
         }
+        let vision = SafetyProfile.preset(.vision)
+        let mobility = SafetyProfile.preset(.mobility)
+        check(!vision.visualAlertsEnabled && vision.voiceEnabled && !vision.voiceOnCriticalOnly && vision.haptics == .strong, "Vision uses strong touch and voice")
+        check(mobility.priority(for: .stairs) > mobility.priority(for: .obstacle), "Mobility prioritizes steps")
+        var custom = SafetyProfile.preset(.custom)
+        custom.warningDistanceMultiplier = 5
+        check(custom.warningDistanceMultiplier == 2, "Multiplier upper clamp")
+        custom.warningDistanceMultiplier = 0
+        check(custom.warningDistanceMultiplier == 0.5, "Multiplier lower clamp")
+        custom.setPriority(99, for: .obstacle)
+        check(custom.priority(for: .obstacle) == 5, "Priority clamp")
+        custom.repeatFrequency = 0
+        check(custom.repeatFrequency == 1, "Repeat interval clamp")
+        for hazard in [Hazard.obstacle, .stairs, .dropOff, .tooClose] {
+            let assessment = RiskEngine.assess(hazard: hazard, distance: 1, movementState: .walking, safetyProfile: vision)
+            check(assessment.personalizedDistanceThreshold == hazard.baseDistance * 1.5, "Personalized threshold for \(hazard)")
+            check((0...100).contains(assessment.totalRiskScore), "Bounded score")
+        }
+        func choose(_ hazards: [HazardObservation], profile: SafetyProfile = .general) -> RiskAssessment {
+            RiskEngine.assess(hazards: hazards, movementState: .walking, safetyProfile: profile)
+        }
+        check(choose([.init(hazard: .dropOff, distance: 0.2), .init(hazard: .tooClose, distance: 0.7)]).targetHazard == .tooClose, "Too close beats even nearer drop")
+        check(choose([.init(hazard: .obstacle, distance: 1.4), .init(hazard: .stairs, distance: 1.9)], profile: mobility).hazard == .stairs, "Profile priority breaks danger tie")
+        check(choose([.init(hazard: .obstacle, distance: 0.5), .init(hazard: .stairs, distance: 2.5)], profile: mobility).hazard == .obstacle, "Danger precedes profile preference")
+        check(choose([.init(hazard: .stairs, distance: 1.8), .init(hazard: .dropOff, distance: 1.5)]).hazard == .dropOff, "Distance breaks priority tie")
+        check(choose([.init(hazard: .obstacle, distance: .nan)]).level == .low, "Invalid observations excluded")
+        check(choose([]).totalRiskScore == 0, "Empty observations clear")
+        check(RiskEngine.assess(hazard: .obstacle, distance: 3, movementState: .walking, safetyProfile: vision).stage == .early, "Vision warns earlier")
         func risk(_ distance: Float, movement: Movement = .walking, closing: Float? = nil) -> RiskAssessment {
             RiskAssessment(hazard: .obstacle, distance: distance, movement: movement, closingSpeed: closing)
         }
-        for (distance, expected): (Float, WarningStage) in [(3.01, .clear), (3, .early), (2.7, .early), (2, .early), (1.99, .warning), (1.2, .warning), (1.19, .immediate)] {
+        for (distance, expected): (Float, WarningStage) in [(2.26, .clear), (2.25, .early), (2.1, .early), (1.5, .early), (1.49, .warning), (0.91, .warning), (0.89, .immediate)] {
             check(risk(distance).stage == expected, "Stage boundary \(distance)")
         }
         check(risk(2.9, movement: .stationary).stage == .clear, "Stationary advance threshold")
-        check(risk(3.5, movement: .fast).stage == .early, "Fast movement extends caution")
-        check(risk(1.1, movement: .stationary).stage == .immediate, "Immediate stationary protection")
+        check(risk(2.8, movement: .fast).stage == .early, "Fast movement extends caution")
+        check(risk(0.85, movement: .stationary).stage == .immediate, "Immediate stationary protection")
         check(risk(3.5, closing: 2).stage == .warning, "TTC escalation")
         check(risk(2.5, closing: 3).stage == .immediate, "Urgent TTC")
         check(risk(3.5, closing: 0.1).timeToCollision == nil, "Near-zero closing speed rejected")
@@ -25,8 +53,8 @@ struct DetectionTests {
         check(Movement(speed: 0.15) == .walking, "Walking movement")
         check(Movement(speed: 1.6) == .fast, "Fast movement")
         var tuned = DetectionConfiguration.standard
-        tuned.earlyDistance = 4
-        check(RiskAssessment(hazard: .obstacle, distance: 3.8, movement: .walking, configuration: tuned).stage == .early, "Configurable threshold")
+        tuned.fastOffset = 1
+        check(RiskAssessment(hazard: .obstacle, distance: 3.2, movement: .fast, configuration: tuned).stage == .early, "Configurable threshold")
 
         func result(_ distance: Float, hazard: Hazard = .obstacle) -> DetectionResult {
             DetectionResult(assessment: RiskAssessment(hazard: hazard, distance: distance, movement: .walking), coverage: 1, nearbyFraction: 1, supportPosition: SIMD3<Float>(0, 0.5, distance))
@@ -37,15 +65,15 @@ struct DetectionTests {
         for index in 1...4 { filtered = filter.update(result(4 - Float(index) * 0.2), timestamp: Double(index) * 0.1) }
         check(abs((filtered.assessment.closingSpeed ?? 0) - 2) < 0.001, "Stable closing speed")
         check(filtered.assessment.stage == .warning, "TTC causes early escalation")
-        check(filter.update(result(1), timestamp: 0.5).assessment.stage == .immediate, "No smoothing delay on approach")
+        check(filter.update(result(0.8), timestamp: 0.5).assessment.stage == .immediate, "No smoothing delay on approach")
         check(filter.update(result(2.5), timestamp: 0.6, headingStable: false).assessment.closingSpeed == nil, "Turns reject TTC")
         filter.reset()
-        _ = filter.update(result(1.95), timestamp: 0)
+        _ = filter.update(result(1.45), timestamp: 0)
         for index in 1...8 {
-            let distance: Float = index.isMultiple(of: 2) ? 1.97 : 2.03
+            let distance: Float = index.isMultiple(of: 2) ? 1.47 : 1.53
             check(filter.update(result(distance), timestamp: Double(index) * 0.1).assessment.stage == .warning, "Boundary jitter holds warning")
         }
-        for index in 9...30 { filtered = filter.update(result(2.5), timestamp: Double(index) * 0.1) }
+        for index in 9...30 { filtered = filter.update(result(2.1), timestamp: Double(index) * 0.1) }
         check(filtered.assessment.stage == .early, "Stable retreat releases warning")
         filter.reset()
         check(filter.update(result(5, hazard: .clear), timestamp: 4).assessment.stage == .clear, "Filter reset")
@@ -141,9 +169,9 @@ struct DetectionTests {
         }
         let noisyFloor = floor.enumerated().map { index, point in point + SIMD3<Float>(0, Float(index % 7 - 3) * 0.02, 0) }
         check(corridor(noisyFloor)!.assessment.hazard == .clear, "Ordinary floor depth noise excluded")
-        let obstacle = (0..<6).map { SIMD3<Float>(Float($0) * 0.02, 0.5, 2.7) }
+        let obstacle = (0..<6).map { SIMD3<Float>(Float($0) * 0.02, 0.5, 2.1) }
         check(corridor(floor + obstacle)!.assessment.stage == .early, "Real obstacle above floor still warns early")
-        let closeObstacle = obstacle.map { SIMD3<Float>($0.x, $0.y, 1) }
+        let closeObstacle = obstacle.map { SIMD3<Float>($0.x, $0.y, 0.8) }
         check(corridor(floor + closeObstacle)!.assessment.stage == .immediate, "Close obstacle retained")
         check(corridor(floor + obstacle + [SIMD3<Float>(0, 0.5, 0.4)])!.assessment.stage == .early, "One bad return cannot force high risk")
         let side = obstacle.map { $0 + SIMD3<Float>(1, 0, 0) }
@@ -209,6 +237,20 @@ struct DetectionTests {
         var changedSurface = result(3)
         changedSurface.supportPosition = SIMD3<Float>(0.4, 1.1, 3)
         check(filter.update(changedSurface, timestamp: 0.5).assessment.closingSpeed == nil, "Different support position rejects previous object's TTC")
+
+        let combinedSamples = (floor + lower + veryClose).map { CorridorSample(position: $0) }
+        let combined = CorridorDetector.analyze(samples: combinedSamples, expected: combinedSamples.count,
+            speed: 0.8, cameraHeight: 1.2, safetyProfile: vision)!
+        check(combined.assessment.hazard == .tooClose, "Detector preserves absolute proximity arbitration")
+        let farObstacle = obstacle.map { SIMD3<Float>($0.x, $0.y, 3.2) }
+        let farSamples = (floor + farObstacle).map { CorridorSample(position: $0) }
+        let earlyVision = CorridorDetector.analyze(samples: farSamples, expected: farSamples.count,
+            speed: 0.8, cameraHeight: 1.2, safetyProfile: vision)!
+        check(earlyVision.assessment.stage == .early, "Detector applies earlier profile warning")
+        filter.reset()
+        _ = filter.update(earlyVision, timestamp: 0)
+        let retained = filter.update(earlyVision, timestamp: 0.1)
+        check(retained.assessment.safetyProfile == vision, "Smoothing retains profile")
 
         let grid = DepthGridSampler.sample(DepthFrame(width: 3, height: 3, meters: [1, 2, 3, 4, .nan, 6, 7, 8, 9]))
         check(grid.cell(row: .mid, column: .center).minMeters == nil, "Original grid invalid cell")

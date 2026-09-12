@@ -109,8 +109,9 @@ enum Movement: String, CaseIterable {
     }
 }
 
-enum Hazard: String {
+enum Hazard: String, CaseIterable {
     case clear = "Path clear"
+    case stairs = "Stairs ahead"
     case obstacle = "Obstacle ahead"
     case dropOff = "Possible drop-off / stairs down"
     case tooClose = "Too close"
@@ -118,9 +119,97 @@ enum Hazard: String {
         switch self {
         case .clear: return "Stay aware of your surroundings"
         case .obstacle: return "Slow down. Check the path ahead."
+        case .stairs: return "Slow down. Check the steps ahead."
         case .dropOff: return "Stop. Check the ground ahead."
         case .tooClose: return "Stop walking. Look ahead."
         }
+    }
+}
+
+enum ProfileKind: String, CaseIterable, Identifiable {
+    case vision = "Vision Impaired", mobility = "Mobility Impaired"
+    case general = "General / Distracted", custom = "Custom"
+    var id: String { rawValue }
+}
+
+enum HapticStrength: String, CaseIterable {
+    case light = "Light", medium = "Medium", strong = "Strong"
+    var intensity: Float { self == .light ? 0.35 : self == .medium ? 0.65 : 1 }
+}
+
+struct SafetyProfile: Equatable {
+    var kind: ProfileKind = .general
+    var warningDistanceMultiplier: Float = 1 {
+        didSet { warningDistanceMultiplier = warningDistanceMultiplier.isFinite ? min(2, max(0.5, warningDistanceMultiplier)) : 1 }
+    }
+    private var priorities: [Hazard: Int] = [.obstacle: 3, .stairs: 3, .dropOff: 3, .tooClose: 5]
+    var haptics: HapticStrength = .medium
+    var voiceEnabled = true
+    var visualAlertsEnabled = true
+    var voiceOnCriticalOnly = true
+    /// Seconds between repeated alerts; urgent escalation can interrupt this interval.
+    var repeatFrequency: Double = 2.5 {
+        didSet { repeatFrequency = repeatFrequency.isFinite ? min(10, max(1, repeatFrequency)) : 2.5 }
+    }
+    static let general = SafetyProfile()
+    func priority(for hazard: Hazard) -> Int { priorities[hazard] ?? 1 }
+    mutating func setPriority(_ value: Int, for hazard: Hazard) { priorities[hazard] = min(5, max(1, value)) }
+    static func preset(_ kind: ProfileKind) -> SafetyProfile {
+        var profile = SafetyProfile()
+        profile.kind = kind
+        if kind == .vision || kind == .mobility {
+            profile.warningDistanceMultiplier = 1.5
+            profile.haptics = .strong
+            profile.voiceOnCriticalOnly = false
+            profile.visualAlertsEnabled = kind != .vision
+            profile.repeatFrequency = 1.6
+            profile.setPriority(5, for: .dropOff)
+            profile.setPriority(5, for: .stairs)
+            profile.setPriority(kind == .vision ? 5 : 3, for: .obstacle)
+        }
+        return profile
+    }
+}
+
+extension Hazard {
+    var baseDistance: Float {
+        switch self {
+        case .clear: return 0
+        case .obstacle: return 1.5
+        case .stairs, .dropOff: return 2
+        case .tooClose: return 0.8
+        }
+    }
+}
+
+struct HazardObservation {
+    let hazard: Hazard
+    let distance: Float
+}
+
+enum RiskEngine {
+    static func assess(hazard: Hazard, distance: Float, movementState: Movement,
+                       safetyProfile: SafetyProfile, configuration: DetectionConfiguration = .standard) -> RiskAssessment {
+        RiskAssessment(hazard: hazard, distance: distance, movement: movementState,
+                       configuration: configuration, safetyProfile: safetyProfile)
+    }
+
+    /// Absolute proximity first, then danger stage, user priority, and nearest distance.
+    static func assess(hazards: [HazardObservation], movementState: Movement,
+                       safetyProfile: SafetyProfile, configuration: DetectionConfiguration = .standard) -> RiskAssessment {
+        let active = hazards.filter { $0.hazard != .clear && $0.distance.isFinite && $0.distance >= 0 }
+            .map { assess(hazard: $0.hazard, distance: $0.distance, movementState: movementState,
+                          safetyProfile: safetyProfile, configuration: configuration) }
+            .filter { $0.stage != .clear }
+        return active.sorted {
+            if ($0.hazard == .tooClose) != ($1.hazard == .tooClose) { return $0.hazard == .tooClose }
+            if $0.stage != $1.stage { return $0.stage > $1.stage }
+            let left = safetyProfile.priority(for: $0.hazard), right = safetyProfile.priority(for: $1.hazard)
+            if left != right { return left > right }
+            if $0.distance != $1.distance { return $0.distance < $1.distance }
+            return $0.hazard.rawValue < $1.hazard.rawValue
+        }.first ?? assess(hazard: .clear, distance: configuration.searchDistance,
+                          movementState: movementState, safetyProfile: safetyProfile, configuration: configuration)
     }
 }
 
@@ -133,18 +222,38 @@ struct RiskAssessment: Equatable {
     var configuration: DetectionConfiguration = .standard
     var closingSpeed: Float? = nil
     var heldStage: WarningStage? = nil
+    var safetyProfile: SafetyProfile = .general
+    var personalizedDistanceThreshold: Float { hazard.baseDistance * safetyProfile.warningDistanceMultiplier }
+    var targetHazard: Hazard { hazard }
+    /// Bounded score: stage determines the band; priority and proximity refine it.
+    var totalRiskScore: Float {
+        guard stage != .clear else { return 0 }
+        if hazard == .tooClose { return 100 }
+        let base: Float = stage == .immediate ? 75 : stage == .warning ? 45 : 15
+        let proximity = max(0, min(1, 1 - distance / max(0.01, personalizedDistanceThreshold)))
+        return min(99, base + Float(safetyProfile.priority(for: hazard)) * 3 + proximity * 9)
+    }
+    func threshold(for stage: WarningStage) -> Float {
+        let base = personalizedDistanceThreshold
+        switch stage {
+        case .clear: return .infinity
+        case .early: return base * 1.5 + configuration.offset(movement: movement)
+        case .warning: return base + configuration.offset(movement: movement)
+        case .immediate: return base * 0.6 + max(0, configuration.offset(movement: movement))
+        }
+    }
     var timeToCollision: Float? {
         guard let closingSpeed, closingSpeed >= configuration.minimumClosingSpeed else { return nil }
         return distance / closingSpeed
     }
     var stage: WarningStage {
         if let heldStage { return heldStage }
-        guard hazard != .clear else { return .clear }
+        guard hazard != .clear, distance.isFinite, distance >= 0 else { return .clear }
         if hazard == .tooClose { return .immediate }
         for stage in [WarningStage.immediate, .warning, .early] {
             let ttcLimit = stage == .immediate ? configuration.immediateTTC : stage == .warning ? configuration.warningTTC : configuration.earlyTTC
-            if distance < configuration.threshold(for: stage, movement: movement)
-                || (stage == .early && distance == configuration.threshold(for: stage, movement: movement))
+            if distance < threshold(for: stage)
+                || (stage == .early && distance == threshold(for: stage))
                 || (timeToCollision.map { $0 < ttcLimit } ?? false) { return stage }
         }
         return .clear
@@ -167,7 +276,7 @@ struct DetectionResult {
     var observedGroundDistance: Float = 0
     var supportPosition: SIMD3<Float>? = nil
     var hasSufficientLookAhead: Bool {
-        observedGroundDistance >= assessment.configuration.threshold(for: .early, movement: assessment.movement)
+        observedGroundDistance >= max(Hazard.obstacle.baseDistance, Hazard.dropOff.baseDistance) * assessment.safetyProfile.warningDistanceMultiplier * 1.5 + assessment.configuration.offset(movement: assessment.movement)
             - assessment.configuration.lookAheadMargin
     }
 }
@@ -212,14 +321,14 @@ struct DetectionStabilizer {
             if let previous {
                 risk = RiskAssessment(hazard: risk.hazard,
                     distance: min(risk.distance, previous.distance + config.distanceReleaseAlpha * (risk.distance - previous.distance)),
-                    movement: risk.movement, configuration: config, closingSpeed: risk.closingSpeed)
+                    movement: risk.movement, configuration: config, closingSpeed: risk.closingSpeed, safetyProfile: risk.safetyProfile)
             }
         } else { rates.removeAll() }
         previousSupport = result.supportPosition
         previousRaw = result.assessment.distance
         lastTime = timestamp
         if let old = previous, dt > 0, dt <= config.maximumSampleGap, risk.stage < old.stage {
-            let boundary = config.threshold(for: old.stage, movement: risk.movement)
+            let boundary = old.threshold(for: old.stage)
             let ttcBoundary = old.stage == .immediate ? config.immediateTTC : old.stage == .warning ? config.warningTTC : config.earlyTTC
             let safelyBeyond = risk.hazard == .clear ||
                 (risk.distance >= boundary + config.releaseMargin && (risk.timeToCollision.map { $0 >= ttcBoundary + config.releaseTTCMargin } ?? true))
@@ -229,7 +338,7 @@ struct DetectionStabilizer {
             if releaseStarted.map({ timestamp - $0 < config.releaseDelay }) ?? true {
                 risk = RiskAssessment(hazard: risk.hazard == .clear ? old.hazard : risk.hazard,
                     distance: risk.distance, movement: risk.movement,
-                    configuration: config, closingSpeed: risk.closingSpeed, heldStage: old.stage)
+                    configuration: config, closingSpeed: risk.closingSpeed, heldStage: old.stage, safetyProfile: risk.safetyProfile)
             } else { releaseStarted = nil }
         } else { releaseStarted = nil }
         previous = risk

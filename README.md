@@ -1,12 +1,12 @@
 # SafeStep
 
-A single live LiDAR walking assistant for iOS 17+. Start scanning, measure the floor, then receive visual, vibration, and spoken hazard warnings. There are no mode selectors or simulated detection flows.
+A single live LiDAR walking assistant for iOS 17+. Start scanning, measure the floor, then receive visual, vibration, and spoken hazard warnings. Choose a safety profile before launching the live session.
 
 ## Run
 
 1. Open `../SafeStep.xcodeproj` in Xcode 15 or newer. The nested `SafeStep.xcodeproj` is a standalone alternative; open only one.
 2. Choose your signing team and run on a LiDAR-equipped iPhone/iPad. Allow camera access.
-3. Tap **Start scanning**. Stand still on flat ground with the rear camera tilted slightly down, between 45° and 70°. Here, 0° means the camera points horizontally forward.
+3. Choose **Vision Impaired**, **Mobility Impaired**, **General / Distracted**, or **Custom**. Custom settings include distance, priorities, haptic strength, voice/visual toggles, critical-only speech, and repeat interval. Tap **Start scanning**. Stand still on flat ground with the rear camera tilted slightly down, between 45° and 70°. Here, 0° means the camera points horizontally forward.
 4. Show a broad patch of floor and hold steady until calibration completes. The live screen displays **Height above floor** separately from obstacle distance.
 5. **Sensor details** contains floor recalibration and Medium/High vibration tests. Vibration must be checked on a physical iPhone; the user’s test devices are iPhone 17 Pro and iPhone 16 Pro Max.
 
@@ -34,11 +34,13 @@ References: [Apple ARKit session interruptions](https://developer.apple.com/docu
 
 ## Warnings
 
-For walking with sufficient view: above 3 m is clear, 2–3 m is early caution, 1.2–2 m is warning, and below 1.2 m is immediate danger. Fast motion extends distances; stationary motion reduces advance warnings. Reliable closing-distance trends with stable support position can escalate via TTC; changing supporting surfaces, turns, inconsistent rates, and data gaps reset that estimate. Immediate escalation and delayed release with hysteresis reduce warning chatter.
+`SafetyProfile` supplies hazard priorities (1–5), a warning distance multiplier (0.5–2.0), light/medium/strong haptics, voice and visual toggles, critical-only speech, and a repeat interval (1–10 seconds). Vision and Mobility use 1.5× distance, strong haptics, voice for all warnings, and 1.6-second repeats. Vision disables visual alerts by default and prioritizes obstacles, stairs, and drops equally; Mobility gives stairs/drops higher priority than obstacles. General uses 1×, medium haptics, visual alerts, critical-only voice, and 2.5-second repeats. Custom starts from General; edits remain available while returning to the start screen during this app run.
 
-Medium gives two full-intensity sustained pulses. High gives three urgent sustained pulses plus speech when Voice is enabled. Voice/Touch controls, cooldowns, cached haptic players, pause/resume, and hardware tests are retained. Test buttons explicitly play audio/haptics regardless of the switches and defer live feedback for two seconds.
+`RiskEngine` returns a `RiskAssessment` with a 0–100 total risk score, level, personalized distance threshold, and target hazard. Base thresholds are obstacle 1.5 m, stairs/drop-off 2 m, and too-close 0.8 m, multiplied by the profile. Early caution extends to 1.5 times that threshold; immediate danger begins below 0.6 times it. Movement offsets and reliable time-to-collision can advance warning stages. Supported obstacles within the personalized too-close boundary become too-close hazards and always take priority. Other active candidates are ordered by danger stage, profile priority, then distance. A deterministic hazard-name tie break keeps equivalent candidates stable.
 
-Tuning values are centralized in `Models/RiskAssessment.swift` → `DetectionConfiguration`. The old additive debug score and mode-specific branches are removed; warning stages drive the UI and alerts directly.
+The detector considers obstacle and drop candidates together. It does not yet recognize separate stair geometry: lower ground remains labeled “Possible drop-off / stairs down.” The risk engine supports distinct stairs observations for a future classifier. Sampling reach and clear-path coverage account for longer profile distances. Temporal filtering retains the selected profile through smoothing and warning release.
+
+Medium warnings give two pulses; high warnings give three. The profile controls pulse intensity and repeated alert timing; urgent escalation can interrupt the interval. Voice/Touch controls, cached haptic players, pause/resume, and hardware tests are retained. Test buttons explicitly play audio/haptics regardless of switches and defer live feedback for two seconds.
 
 ## Validation
 
@@ -51,7 +53,7 @@ swiftc Detection/DepthProcessing.swift Models/RiskAssessment.swift Tests/Detecti
 
 If the default SDK is newer than the compiler, pass `-sdk /path/to/compatible/MacOSX.sdk`. Tests cover calibration timing, motion/angle rejection, wall and sparse-point rejection, floor noise, phone-height changes, fixed floor references, actual obstacles/drops, TTC, hysteresis, and the original grid utilities.
 
-The current suite passes **127 checks**, including portrait sensor-ray projection at 45°, 55°, 65°, and 70°, competing floor levels, near-view detection, very close obstacles, and small close objects against a large distant wall. Swift syntax and project-file validation also pass. Full iOS compilation, physical haptic strength, and live floor measurement remain unverified in this workspace. On each test iPhone, compare the displayed height with a measured phone-to-floor height while stationary, then check a flat walk at several downward angles. Verify a real obstacle still warns after calibration. Test a nearby object while the distant floor is out of view: it should warn rather than discard the reading. Check **Limited view** on a near-only flat-floor view. Switch to another app and return: detection must be unavailable while away and resume calibration on return. Manually pause before switching apps and confirm it remains paused.
+The suite includes profile defaults, bounds, threshold personalization, hazard arbitration, and portrait sensor-ray projection at 45°, 55°, 65°, and 70°, competing floor levels, near-view detection, very close obstacles, and small close objects against a large distant wall. Swift syntax and project-file validation also pass. Full iOS compilation, physical haptic strength, and live floor measurement remain unverified in this workspace. On each test iPhone, compare the displayed height with a measured phone-to-floor height while stationary, then check a flat walk at several downward angles. Verify a real obstacle still warns after calibration. Test a nearby object while the distant floor is out of view: it should warn rather than discard the reading. Check **Limited view** on a near-only flat-floor view. Switch to another app and return: detection must be unavailable while away and resume calibration on return. Manually pause before switching apps and confirm it remains paused.
 
 This is a prototype: horizontal-plane geometry cannot semantically distinguish every broad tabletop or landing from a floor. Calibrate while showing actual flat ground. Slopes, tracking drift, glass, reflective surfaces, and thin objects can still cause incorrect or missed detections. The 18 cm obstacle-height cutoff can miss lower trip hazards. Thresholds are tunable, not certified safety values.
 

@@ -211,7 +211,10 @@ struct CorridorGeometry {
 
 enum CorridorDetector {
     static func analyze(samples: [CorridorSample], expected: Int, speed: Float,
-                        cameraHeight: Float, configuration: DetectionConfiguration = .standard) -> DetectionResult? {
+                        cameraHeight: Float, configuration: DetectionConfiguration = .standard,
+                        safetyProfile: SafetyProfile = .general) -> DetectionResult? {
+        var configuration = configuration
+        configuration.earlyDistance = max(configuration.earlyDistance, 3 * safetyProfile.warningDistanceMultiplier)
         guard expected > 0 else { return nil }
         let valid = samples.filter { $0.position.x.isFinite && $0.position.y.isFinite && $0.position.z.isFinite }
         let coverage = Float(valid.count) / Float(expected)
@@ -241,13 +244,12 @@ enum CorridorDetector {
         let groundDistances = ground.map(\.z).sorted()
         let observedDistance = groundDistances.count >= configuration.minimumHazardSamples
             ? groundDistances[groundDistances.count - configuration.minimumHazardSamples] : 0
-        var hazard: Hazard = .clear
-        var distance = configuration.searchDistance
-        var support: SIMD3<Float>?
+        var candidates: [HazardObservation] = []
+        var supports: [Hazard: SIMD3<Float>] = [:]
         if let obstacle = nearestSupport(obstacles) {
-            hazard = obstacle.z < configuration.immediateDistance ? .tooClose : .obstacle
-            distance = obstacle.z
-            support = obstacle
+            let hazard: Hazard = obstacle.z <= Hazard.tooClose.baseDistance * safetyProfile.warningDistanceMultiplier ? .tooClose : .obstacle
+            candidates.append(HazardObservation(hazard: hazard, distance: obstacle.z))
+            supports[hazard] = obstacle
         }
         if let lower = nearestSupport(belowGround) {
             // Only supporting ground *before* the lower surface belongs to this edge.
@@ -256,19 +258,17 @@ enum CorridorDetector {
             if hasNearSupport {
                 let ordered = beforeEdge.map(\.z).sorted()
                 let edgeDistance = ordered[ordered.count - configuration.minimumHazardSamples]
-                if hazard == .clear || edgeDistance < distance {
-                    hazard = .dropOff
-                    distance = edgeDistance
-                    support = SIMD3<Float>(lower.x, 0, edgeDistance)
-                }
-            } else if hazard == .clear { return nil }
+                candidates.append(HazardObservation(hazard: .dropOff, distance: edgeDistance))
+                supports[.dropOff] = SIMD3<Float>(lower.x, 0, edgeDistance)
+            } else if candidates.isEmpty { return nil }
         }
         // Seeing side surfaces alone is not evidence that the walking path is clear.
-        if hazard == .clear && ground.count < configuration.minimumHazardSamples { return nil }
-        return DetectionResult(assessment: RiskAssessment(hazard: hazard, distance: distance,
-            movement: Movement(speed: speed, configuration: configuration), configuration: configuration),
+        if candidates.isEmpty && ground.count < configuration.minimumHazardSamples { return nil }
+        let assessment = RiskEngine.assess(hazards: candidates,
+            movementState: Movement(speed: speed, configuration: configuration), safetyProfile: safetyProfile, configuration: configuration)
+        return DetectionResult(assessment: assessment,
             coverage: min(1, coverage), nearbyFraction: Float(obstacles.count) / Float(max(1, valid.count)),
-            observedGroundDistance: observedDistance, supportPosition: support)
+            observedGroundDistance: observedDistance, supportPosition: supports[assessment.hazard])
     }
 }
 

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>SafeStep</string>
+	<string>PathGuard</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -19,7 +19,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>SafeStep uses the rear camera and LiDAR to estimate nearby obstacles and changes in ground depth. Frames are processed on your device.</string>
+	<string>PathGuard uses the rear camera and LiDAR to estimate nearby obstacles and changes in ground depth. Frames are processed on your device.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

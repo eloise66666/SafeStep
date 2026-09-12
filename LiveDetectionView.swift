@@ -12,12 +12,16 @@ extension RiskLevel {
 }
 
 struct LiveDetectionView: View {
-    @StateObject private var model = WalkSession()
+    @StateObject private var model: WalkSession
+
+    init(safetyProfile: SafetyProfile = .general) {
+        _model = StateObject(wrappedValue: WalkSession(safetyProfile: safetyProfile))
+    }
     @Environment(\.scenePhase) private var scenePhase
     @State private var showDebug = false
 
     private var tint: Color {
-        guard let risk = model.result?.assessment else { return .gray }
+        guard model.safetyProfile.visualAlertsEnabled, let risk = model.result?.assessment else { return .gray }
         return risk.level == .low && !model.hasFullLookAhead ? .gray : risk.level.color
     }
 
@@ -32,10 +36,13 @@ struct LiveDetectionView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 camera
-                statusCard
-                HStack(spacing: 12) {
-                    metric("OBSTACLE AHEAD", value: model.result.flatMap { $0.assessment.hazard == .clear ? nil : $0.assessment.distanceText } ?? "—", icon: "arrow.left.and.right")
-                    metric("HEIGHT ABOVE FLOOR", value: model.groundHeight.map { String(format: "%.2f m", $0) } ?? "—", icon: "arrow.up.and.down")
+                Text(model.safetyProfile.kind.rawValue).font(.subheadline)
+                if model.safetyProfile.visualAlertsEnabled || model.result == nil { statusCard }
+                if model.safetyProfile.visualAlertsEnabled {
+                    HStack(spacing: 12) {
+                        metric("OBSTACLE AHEAD", value: model.result.flatMap { $0.assessment.hazard == .clear ? nil : $0.assessment.distanceText } ?? "—", icon: "arrow.left.and.right")
+                        metric("HEIGHT ABOVE FLOOR", value: model.groundHeight.map { String(format: "%.2f m", $0) } ?? "—", icon: "arrow.up.and.down")
+                    }
                 }
                 HStack {
                     Toggle(isOn: $model.voiceEnabled) { Label("Voice", systemImage: "speaker.wave.2") }
@@ -43,7 +50,7 @@ struct LiveDetectionView: View {
                 }
                 .font(.caption).tint(.stepAccent)
                 Text(model.status).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                Text("Keep SafeStep visible. Detection pauses when you switch apps or lock the phone.")
+                Text("Keep PathGuard visible. Detection pauses when you switch apps or lock the phone.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button { showDebug = true } label: {
                     HStack {
@@ -83,7 +90,7 @@ struct LiveDetectionView: View {
         GeometryReader { geometry in
             ZStack {
                 CameraPreview(model: model)
-                if !model.samplingMask.isEmpty {
+                if model.safetyProfile.visualAlertsEnabled && !model.samplingMask.isEmpty {
                     Path { path in
                         for point in model.samplingMask {
                             path.addRect(CGRect(x: (point.x - 0.5 / 48) * geometry.size.width,

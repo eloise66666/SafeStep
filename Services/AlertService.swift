@@ -3,6 +3,7 @@ import CoreHaptics
 import UIKit
 
 final class AlertService: NSObject, AVSpeechSynthesizerDelegate {
+    private let safetyProfile: SafetyProfile
     private let configuration: DetectionConfiguration
     private let speech = AVSpeechSynthesizer()
     private var engine: CHHapticEngine?
@@ -17,7 +18,9 @@ final class AlertService: NSObject, AVSpeechSynthesizerDelegate {
     var hapticsEnabled = true
     private(set) var lastHapticError: String?
 
-    init(configuration: DetectionConfiguration = .standard) {
+    init(configuration: DetectionConfiguration = .standard, safetyProfile: SafetyProfile = .general) {
+        self.safetyProfile = safetyProfile
+        self.voiceEnabled = safetyProfile.voiceEnabled
         self.configuration = configuration
         super.init()
         speech.delegate = self
@@ -41,16 +44,16 @@ final class AlertService: NSObject, AVSpeechSynthesizerDelegate {
         }
         let high = assessment.level == .high
         let escalation = high && lastLevel != .high
-        let interval = high ? configuration.highCooldown : configuration.mediumCooldown
+        let interval = safetyProfile.repeatFrequency
         let hapticReady = Date().timeIntervalSince(lastHaptic) >= interval ||
             (escalation && Date().timeIntervalSince(lastHaptic) >= configuration.hapticEscalationCooldown)
         if hapticsEnabled && hapticReady {
             lastHaptic = Date()
             playHaptic(level: assessment.level)
         }
-        let speechReady = Date().timeIntervalSince(lastSpeech) >= configuration.speechCooldown || escalation ||
+        let speechReady = Date().timeIntervalSince(lastSpeech) >= safetyProfile.repeatFrequency || escalation ||
             (lastSpokenHazard != assessment.hazard && Date().timeIntervalSince(lastSpeech) >= configuration.speechHazardCooldown)
-        if voiceEnabled && high && speechReady {
+        if voiceEnabled && (!safetyProfile.voiceOnCriticalOnly || high) && speechReady {
             let text = assessment.stage == .immediate
                 ? "Immediate danger. \(assessment.hazard.rawValue). Stop walking."
                 : "\(assessment.stage.title). \(assessment.hazard.rawValue), \(assessment.distanceText) ahead. \(assessment.advice)"
@@ -106,7 +109,7 @@ final class AlertService: NSObject, AVSpeechSynthesizerDelegate {
                 let gap = high ? configuration.highPulseGap : configuration.mediumPulseGap
                 let events = (0..<(high ? 3 : 2)).map { index in
                     CHHapticEvent(eventType: .hapticContinuous, parameters: [
-                        CHHapticEventParameter(parameterID: .hapticIntensity, value: 1),
+                        CHHapticEventParameter(parameterID: .hapticIntensity, value: safetyProfile.haptics.intensity),
                         CHHapticEventParameter(parameterID: .hapticSharpness, value: high ? 1 : 0.7)
                     ], relativeTime: Double(index) * (duration + gap), duration: duration)
                 }
@@ -121,7 +124,8 @@ final class AlertService: NSObject, AVSpeechSynthesizerDelegate {
             // Reuse the engine; a reset or subsequent start may recover it.
             fallbackPulses.forEach { $0.cancel() }
             fallbackPulses = (0..<(high ? 3 : 2)).map { index in
-                let work = DispatchWorkItem { UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1) }
+                let strength = safetyProfile.haptics
+                let work = DispatchWorkItem { UIImpactFeedbackGenerator(style: strength == .light ? .light : strength == .medium ? .medium : .heavy).impactOccurred(intensity: CGFloat(strength.intensity)) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3, execute: work)
                 return work
             }

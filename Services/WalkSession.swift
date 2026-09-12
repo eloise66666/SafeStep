@@ -4,6 +4,7 @@ import SwiftUI
 
 final class WalkSession: NSObject, ObservableObject, ARSessionDelegate {
     let session = ARSession()
+    let safetyProfile: SafetyProfile
     let configuration: DetectionConfiguration
     let alerts: AlertService
     @Published private(set) var isRunning = false
@@ -37,10 +38,15 @@ final class WalkSession: NSObject, ObservableObject, ARSessionDelegate {
 
     static var supportsLiDAR: Bool { ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) }
 
-    init(configuration: DetectionConfiguration = .standard) {
-        self.configuration = configuration
-        self.alerts = AlertService(configuration: configuration)
+    init(configuration: DetectionConfiguration = .standard, safetyProfile: SafetyProfile = .general) {
+        self.safetyProfile = safetyProfile
+        var tuned = configuration
+        tuned.earlyDistance = max(tuned.earlyDistance, 2 * safetyProfile.warningDistanceMultiplier * 1.5)
+        self.configuration = tuned
+        self.alerts = AlertService(configuration: tuned, safetyProfile: safetyProfile)
         super.init()
+        voiceEnabled = safetyProfile.voiceEnabled
+        alerts.voiceEnabled = safetyProfile.voiceEnabled
         session.delegate = self
         session.delegateQueue = .main
     }
@@ -110,7 +116,7 @@ final class WalkSession: NSObject, ObservableObject, ARSessionDelegate {
         if active {
             if isEnabled { start() }
         } else {
-            suspend("Detection paused · keep SafeStep visible. Scanning resumes when you return.")
+            suspend("Detection paused · keep PathGuard visible. Scanning resumes when you return.")
         }
     }
 
@@ -267,7 +273,7 @@ final class WalkSession: NSObject, ObservableObject, ARSessionDelegate {
             }
         }
         guard let reading = CorridorDetector.analyze(samples: samples, expected: mask.count,
-            speed: filteredSpeed, cameraHeight: cameraHeight, configuration: configuration) else {
+            speed: filteredSpeed, cameraHeight: cameraHeight, configuration: configuration, safetyProfile: safetyProfile) else {
             invalidateReading("Not enough reliable depth · check the camera view")
             return
         }
