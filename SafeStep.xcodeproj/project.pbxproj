@@ -1,0 +1,36 @@
+// !$*UTF8*$!
+{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+00000000000000000000012C = { isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+00000000000000000000012D = { isa = PBXBuildFile; fileRef = 00000000000000000000012C; };
+000000000000000000000064 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SafeStepApp.swift"; sourceTree = "<group>"; };
+0000000000000000000000C8 = { isa = PBXBuildFile; fileRef = 000000000000000000000064; };
+000000000000000000000065 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StartView.swift"; sourceTree = "<group>"; };
+0000000000000000000000C9 = { isa = PBXBuildFile; fileRef = 000000000000000000000065; };
+000000000000000000000066 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveDetectionView.swift"; sourceTree = "<group>"; };
+0000000000000000000000CA = { isa = PBXBuildFile; fileRef = 000000000000000000000066; };
+000000000000000000000067 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DebugPanel.swift"; sourceTree = "<group>"; };
+0000000000000000000000CB = { isa = PBXBuildFile; fileRef = 000000000000000000000067; };
+000000000000000000000068 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Detection/DepthProcessing.swift"; sourceTree = "<group>"; };
+0000000000000000000000CC = { isa = PBXBuildFile; fileRef = 000000000000000000000068; };
+000000000000000000000069 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/RiskAssessment.swift"; sourceTree = "<group>"; };
+0000000000000000000000CD = { isa = PBXBuildFile; fileRef = 000000000000000000000069; };
+00000000000000000000006A = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/AlertService.swift"; sourceTree = "<group>"; };
+0000000000000000000000CE = { isa = PBXBuildFile; fileRef = 00000000000000000000006A; };
+00000000000000000000006B = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/WalkSession.swift"; sourceTree = "<group>"; };
+0000000000000000000000CF = { isa = PBXBuildFile; fileRef = 00000000000000000000006B; };
+00000000000000000000000A = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SafeStep.app; sourceTree = BUILT_PRODUCTS_DIR; };
+00000000000000000000000B = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+000000000000000000000002 = { isa = PBXGroup; children = (00000000000000000000012C,000000000000000000000064,000000000000000000000065,000000000000000000000066,000000000000000000000067,000000000000000000000068,000000000000000000000069,00000000000000000000006A,00000000000000000000006B,00000000000000000000000B,000000000000000000000003,); sourceTree = "<group>"; };
+000000000000000000000003 = { isa = PBXGroup; children = (00000000000000000000000A,); name = Products; sourceTree = "<group>"; };
+000000000000000000000004 = { isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000015; buildPhases = (000000000000000000000005,000000000000000000000006,000000000000000000000007,); buildRules = (); dependencies = (); name = SafeStep; productName = SafeStep; productReference = 00000000000000000000000A; productType = "com.apple.product-type.application"; };
+000000000000000000000005 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (0000000000000000000000C8,0000000000000000000000C9,0000000000000000000000CA,0000000000000000000000CB,0000000000000000000000CC,0000000000000000000000CD,0000000000000000000000CE,0000000000000000000000CF,); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000006 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000007 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000012D,); runOnlyForDeploymentPostprocessing = 0; };
+00000000000000000000001E = { isa = XCBuildConfiguration; name = Debug; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
+00000000000000000000001F = { isa = XCBuildConfiguration; name = Release; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-O"; }; };
+000000000000000000000020 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { PRODUCT_BUNDLE_IDENTIFIER = com.safestep.app; PRODUCT_NAME = "$(TARGET_NAME)"; INFOPLIST_FILE = Info.plist; GENERATE_INFOPLIST_FILE = NO; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = Automatic; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; }; };
+000000000000000000000021 = { isa = XCBuildConfiguration; name = Release; buildSettings = { PRODUCT_BUNDLE_IDENTIFIER = com.safestep.app; PRODUCT_NAME = "$(TARGET_NAME)"; INFOPLIST_FILE = Info.plist; GENERATE_INFOPLIST_FILE = NO; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = Automatic; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; }; };
+000000000000000000000014 = { isa = XCConfigurationList; buildConfigurations = (00000000000000000000001E,00000000000000000000001F,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+000000000000000000000015 = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000020,000000000000000000000021,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+000000000000000000000001 = { isa = PBXProject; attributes = { LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; }; buildConfigurationList = 000000000000000000000014; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en,Base,); mainGroup = 000000000000000000000002; productRefGroup = 000000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000004,); };
+}; rootObject = 000000000000000000000001; }
